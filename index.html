@@ -454,20 +454,35 @@
       };
       
       const saveToIndexedDB = async (data) => {
-        try {
-          const db = await openDB();
-          const tx = db.transaction('storage', 'readwrite');
-          const store = tx.objectStore('storage');
-          store.put(data, 'appState');
-          await new Promise((resolve, reject) => {
-            tx.oncomplete = resolve;
-            tx.onerror = () => reject(tx.error);
-          });
-          db.close();
-        } catch (e) {
-          console.error('IndexedDB 保存失败:', e);
-        }
+  try {
+    const dataStr = JSON.stringify(data);
+    const sizeMB = (dataStr.length * 2) / 1024 / 1024;
+    console.log(`💾 保存数据: ${sizeMB.toFixed(2)}MB`);
+    
+    if (sizeMB > 45) {
+      console.warn('⚠️ 数据接近上限！');
+      alert('存储空间即将满！建议在设置中清理不需要的聊天记录或图片。');
+    }
+    
+    const db = await openDB();
+    const tx = db.transaction('storage', 'readwrite');
+    const store = tx.objectStore('storage');
+    store.put(data, 'appState');
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = (e) => {
+        console.error('存储被中止:', e);
+        alert('存储失败！空间可能已满，请清理数据后重试。');
+        reject(e);
       };
+    });
+    db.close();
+  } catch (e) {
+    console.error('IndexedDB 保存失败:', e);
+    alert('保存失败: ' + e.message);
+  }
+};
       
       const loadFromIndexedDB = async () => {
         try {
@@ -2543,34 +2558,76 @@ const Settings = () => {
         </div>
         
                 {/* 存储空间显示 */}
-        <div className="mt-6 mx-4 bg-white rounded-xl p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-600">📦 存储空间</span>
-            <span className="text-xs text-gray-400">
-              {(() => {
-                try {
-                  const data = JSON.stringify(store.getState());
-                  const sizeMB = (data.length * 2) / 1024 / 1024;
-                  return `${sizeMB.toFixed(2)} MB`;
-                } catch { return '计算中...'; }
-              })()}
-            </span>
-          </div>
-          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-green-400 to-blue-500 transition-all"
-              style={{
-                width: `${Math.min(100, (() => {
-                  try {
-                    const data = JSON.stringify(store.getState());
-                    return (data.length * 2) / 1024 / 1024 / 50 * 100; // 50MB 为 IndexedDB 上限
-                  } catch { return 0; }
-                })())}%`
-              }}
-            />
-          </div>
-          <p className="text-xs text-gray-400 mt-1 text-center">使用 IndexedDB，最大约 50MB</p>
-        </div>
+<div className="mt-6 mx-4 bg-white rounded-xl p-4">
+  <div className="flex items-center justify-between mb-2">
+    <span className="text-sm text-gray-600">📦 存储空间</span>
+    <span className="text-xs text-gray-400">
+      {(() => {
+        try {
+          const data = JSON.stringify(store.getState());
+          const sizeMB = (data.length * 2) / 1024 / 1024;
+          return `${sizeMB.toFixed(2)} MB`;
+        } catch { return '计算中...'; }
+      })()}
+    </span>
+  </div>
+  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+    <div 
+      className="h-full bg-gradient-to-r from-green-400 to-blue-500 transition-all"
+      style={{
+        width: `${Math.min(100, (() => {
+          try {
+            const data = JSON.stringify(store.getState());
+            return (data.length * 2) / 1024 / 1024 / 50 * 100;
+          } catch { return 0; }
+        })())}%`
+      }}
+    />
+  </div>
+  <p className="text-xs text-gray-400 mt-1 text-center">使用 IndexedDB，最大约 50MB</p>
+  
+  {/* 清理按钮 */}
+  <div className="mt-3 space-y-2">
+    <button
+      onClick={() => {
+        if (confirm('确定要清理所有聊天记录吗？角色和人设会保留。')) {
+          store.setState(s => ({ ...s, chats: [] }));
+          alert('聊天记录已清理！');
+        }
+      }}
+      className="w-full py-2 bg-orange-100 text-orange-600 rounded-lg text-sm"
+    >
+      🗑️ 清理所有聊天记录
+    </button>
+    <button
+      onClick={() => {
+        if (confirm('确定要清理星语所有帖子吗？')) {
+          store.setState(s => ({
+            ...s,
+            socialMedia: { ...s.socialMedia, posts: [], npcAccounts: [] }
+          }));
+          alert('星语帖子已清理！');
+        }
+      }}
+      className="w-full py-2 bg-pink-100 text-pink-600 rounded-lg text-sm"
+    >
+      🗑️ 清理星语帖子
+    </button>
+    <button
+      onClick={() => {
+        if (confirm('⚠️ 这会清除所有数据并重置应用！确定吗？')) {
+          indexedDB.deleteDatabase('FakePhoneDB');
+          localStorage.clear();
+          alert('数据已清除，页面将刷新');
+          location.reload();
+        }
+      }}
+      className="w-full py-2 bg-red-100 text-red-600 rounded-lg text-sm"
+    >
+      ⚠️ 重置所有数据
+    </button>
+  </div>
+</div>
         
         <p className="text-center text-gray-400 text-xs mt-8">Fake Phone v1.0</p>
       </div>
@@ -2618,10 +2675,10 @@ const Settings = () => {
       });
 
       const handleAvatarUpload = (e, type) => {
-        const file = e.target.files?.[0];
-        if (file) {
-          // 压缩图片
-          const compressImage = (file, maxWidth = 400, quality = 0.7) => {
+  const file = e.target.files?.[0];
+  if (file) {
+    // 压缩图片 - 更小的尺寸和质量以节省空间
+    const compressImage = (file, maxWidth = 200, quality = 0.5) => {
             return new Promise((resolve) => {
               const reader = new FileReader();
               reader.onload = (event) => {
