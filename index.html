@@ -5188,16 +5188,31 @@ if (msg.type === 'shared_post' && msg.sharedPost) {
           
           if (hasBubbleImage) {
             return (
-              <div className="relative inline-block">
-                <div 
-                  className="absolute inset-0 pointer-events-none"
-                  style={{
-                    backgroundImage: `url(${styleOwner.bubbleImage})`,
-                    backgroundSize: '100% 100%',
-                    backgroundRepeat: 'no-repeat',
+              <div 
+                className="relative inline-block"
+                style={{
+                  // 核心修复：使用 border-image 实现九宫格拉伸
+                  borderStyle: 'solid',
+                  // 这四个数值决定了边框占用的空间，你可以根据效果微调
+                  borderWidth: '25px 30px 35px 45px', 
+                  // 60-120 这些数值决定了保护多少像素不被拉伸（对应星星和尾巴的位置）
+                  borderImageSource: `url(${styleOwner.bubbleImage})`,
+                  borderImageSlice: '80 100 100 130 fill', 
+                  borderImageRepeat: 'stretch',
+                  // 确保气泡不会太窄
+                  minWidth: '100px',
+                  filter: 'drop-shadow(0 2px 5px rgba(0,0,0,0.1))',
+                  ...customCSS
+                }}
+              >
+                {/* 文字内容：通过负边距抵消掉 border 占用的空间，让文字回到中间 */}
+                <p 
+                  className="relative whitespace-pre-wrap break-words leading-relaxed" 
+                  style={{ 
+                    margin: '-10px -10px -15px -15px',
+                    ...textStyle 
                   }}
-                />
-                <p className="relative px-4 py-2 whitespace-pre-wrap break-words leading-relaxed" style={{ ...textStyle, ...customCSS }}>
+                >
                   {content}
                 </p>
               </div>
