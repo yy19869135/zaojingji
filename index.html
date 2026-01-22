@@ -433,10 +433,59 @@
       };
     };
 
-    // 简单的状态管理
+    // 简单的状态管理（使用 IndexedDB 存储大数据）
     const createStore = (initialState) => {
       let state = initialState;
       const listeners = new Set();
+      
+      // IndexedDB 操作封装
+      const openDB = () => {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open('FakePhoneDB', 1);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result);
+          request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('storage')) {
+              db.createObjectStore('storage');
+            }
+          };
+        });
+      };
+      
+      const saveToIndexedDB = async (data) => {
+        try {
+          const db = await openDB();
+          const tx = db.transaction('storage', 'readwrite');
+          const store = tx.objectStore('storage');
+          store.put(data, 'appState');
+          await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+          });
+          db.close();
+        } catch (e) {
+          console.error('IndexedDB 保存失败:', e);
+        }
+      };
+      
+      const loadFromIndexedDB = async () => {
+        try {
+          const db = await openDB();
+          const tx = db.transaction('storage', 'readonly');
+          const store = tx.objectStore('storage');
+          const request = store.get('appState');
+          const result = await new Promise((resolve, reject) => {
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          db.close();
+          return result;
+        } catch (e) {
+          console.error('IndexedDB 读取失败:', e);
+          return null;
+        }
+      };
       
       const getState = () => state;
       
@@ -444,37 +493,26 @@
         state = typeof newState === 'function' ? newState(state) : { ...state, ...newState };
         listeners.forEach(listener => listener(state));
         
-        // 延迟保存，避免高频操作导致卡顿
+        // 延迟保存到 IndexedDB
         clearTimeout(window.saveTimer);
-        window.saveTimer = setTimeout(() => {
-          try {
-            const stateToSave = {
-              ...state,
-              pendingReplies: {}, 
-              notifications: [],
-              appState: {
-                ...state.appState,
-                currentScreen: state.appState.currentScreen === 'lock' ? 'lock' : 'home',
-                currentChatId: null,
-              }
-            };
-            
-            const stringifiedData = JSON.stringify(stateToSave);
-            
-            // 检查大小 (约等于字符长度 * 2 字节)
-            const sizeInMB = (stringifiedData.length * 2) / 1024 / 1024;
-            if (sizeInMB > 4.5) {
-              console.warn(`⚠️ 存储空间即将耗尽: ${sizeInMB.toFixed(2)}MB / 5MB`);
+        window.saveTimer = setTimeout(async () => {
+          const stateToSave = {
+            ...state,
+            pendingReplies: {},
+            notifications: [],
+            appState: {
+              ...state.appState,
+              currentScreen: 'lock',
+              currentChatId: null,
             }
-            
-            localStorage.setItem('fake-phone-storage', stringifiedData);
-          } catch (e) {
-            console.error('💾 保存失败:', e);
-            if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-              alert('⚠️ 存储空间已满！\n原因：你上传的图片（背景、气泡或头像）体积太大。\n建议：请更换较小的图片，或在“设置”中导出备份。');
-            }
-          }
-        }, 500); // 500ms 抖动缓冲
+          };
+          
+          // 计算大小并显示
+          const sizeInMB = (JSON.stringify(stateToSave).length * 2) / 1024 / 1024;
+          console.log(`💾 数据大小: ${sizeInMB.toFixed(2)}MB`);
+          
+          await saveToIndexedDB(stateToSave);
+        }, 800);
       };
       
       const subscribe = (listener) => {
@@ -482,17 +520,38 @@
         return () => listeners.delete(listener);
       };
       
-      // 从 localStorage 恢复（使用智能合并）
-      try {
-        const saved = localStorage.getItem('fake-phone-storage');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          state = smartMergeState(initialState, parsed);
-          console.log('✅ 用户数据已恢复');
+      // 初始化时从 IndexedDB 加载
+      const initializeStore = async () => {
+        try {
+          // 先尝试从 IndexedDB 加载
+          const savedData = await loadFromIndexedDB();
+          
+          if (savedData) {
+            state = smartMergeState(initialState, savedData);
+            console.log('✅ 从 IndexedDB 恢复数据');
+          } else {
+            // 兼容旧版：尝试从 localStorage 迁移
+            const oldData = localStorage.getItem('fake-phone-storage');
+            if (oldData) {
+              const parsed = JSON.parse(oldData);
+              state = smartMergeState(initialState, parsed);
+              // 迁移到 IndexedDB
+              await saveToIndexedDB(state);
+              // 清理旧的 localStorage
+              localStorage.removeItem('fake-phone-storage');
+              console.log('✅ 已从 localStorage 迁移到 IndexedDB');
+            }
+          }
+          
+          // 通知所有监听器
+          listeners.forEach(listener => listener(state));
+        } catch (e) {
+          console.error('初始化失败:', e);
         }
-      } catch (e) {
-        console.error('Load failed:', e);
-      }
+      };
+      
+      // 立即开始初始化
+      initializeStore();
       
       return { getState, setState, subscribe };
     };
@@ -2482,7 +2541,37 @@ const Settings = () => {
             </div>
           </div>
         </div>
-
+        
+                {/* 存储空间显示 */}
+        <div className="mt-6 mx-4 bg-white rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-gray-600">📦 存储空间</span>
+            <span className="text-xs text-gray-400">
+              {(() => {
+                try {
+                  const data = JSON.stringify(store.getState());
+                  const sizeMB = (data.length * 2) / 1024 / 1024;
+                  return `${sizeMB.toFixed(2)} MB`;
+                } catch { return '计算中...'; }
+              })()}
+            </span>
+          </div>
+          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-gradient-to-r from-green-400 to-blue-500 transition-all"
+              style={{
+                width: `${Math.min(100, (() => {
+                  try {
+                    const data = JSON.stringify(store.getState());
+                    return (data.length * 2) / 1024 / 1024 / 50 * 100; // 50MB 为 IndexedDB 上限
+                  } catch { return 0; }
+                })())}%`
+              }}
+            />
+          </div>
+          <p className="text-xs text-gray-400 mt-1 text-center">使用 IndexedDB，最大约 50MB</p>
+        </div>
+        
         <p className="text-center text-gray-400 text-xs mt-8">Fake Phone v1.0</p>
       </div>
       
@@ -2531,15 +2620,46 @@ const Settings = () => {
       const handleAvatarUpload = (e, type) => {
         const file = e.target.files?.[0];
         if (file) {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            if (type === 'char') {
-              setCharForm({ ...charForm, avatar: event.target.result });
-            } else {
-              setPersonaForm({ ...personaForm, avatar: event.target.result });
-            }
+          // 压缩图片
+          const compressImage = (file, maxWidth = 400, quality = 0.7) => {
+            return new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                  const canvas = document.createElement('canvas');
+                  let width = img.width;
+                  let height = img.height;
+                  
+                  // 限制最大宽度
+                  if (width > maxWidth) {
+                    height = (height * maxWidth) / width;
+                    width = maxWidth;
+                  }
+                  
+                  canvas.width = width;
+                  canvas.height = height;
+                  
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(img, 0, 0, width, height);
+                  
+                  // 转为压缩后的 base64
+                  const compressed = canvas.toDataURL('image/jpeg', quality);
+                  resolve(compressed);
+                };
+                img.src = event.target.result;
+              };
+              reader.readAsDataURL(file);
+            });
           };
-          reader.readAsDataURL(file);
+          
+          compressImage(file).then((compressedImage) => {
+            if (type === 'char') {
+              setCharForm({ ...charForm, avatar: compressedImage });
+            } else {
+              setPersonaForm({ ...personaForm, avatar: compressedImage });
+            }
+          });
         }
       };
 
