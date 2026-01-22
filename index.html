@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Fake Phone - 角色扮演聊天</title>
+  <title>造镜机 Verse Creator</title>
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -2655,36 +2655,465 @@ const Settings = () => {
 };
     
     // ==================== 通讯录组件 ====================
-    const Contacts = () => {
-      const state = useStore();
-      const [activeTab, setActiveTab] = useState('characters');
-      const [showEditor, setShowEditor] = useState(false);
-      const [editingChar, setEditingChar] = useState(null);
-      const [editingPersona, setEditingPersona] = useState(null);
-      const avatarInputRef = useRef(null);
-      
-      const [charForm, setCharForm] = useState({
-        name: '', avatar: '', gender: 'other', age: 20, sexuality: '', persona: '',
-        // 装扮设置
-        bubbleImage: '',      // 气泡背景图
-        bubbleColor: '',      // 气泡颜色
-        avatarFrame: '',      // 头像挂件
-        textColor: '',        // 文字颜色
-        fontSize: 14,         // 字体大小
-        fontFamily: ''        // 字体
-      });
-      
-      const [personaForm, setPersonaForm] = useState({
-        name: '', avatar: '', gender: 'other', age: 20, persona: '',
-        // 装扮设置
-        bubbleImage: '',
-        bubbleColor: '',
-        avatarFrame: '',
-        textColor: '',
-        fontSize: 14,
-        fontFamily: ''
-      });
+const Contacts = () => {
+  const state = useStore();
+  const [activeTab, setActiveTab] = useState('characters');
+  const [showEditor, setShowEditor] = useState(false);
+  const [editingChar, setEditingChar] = useState(null);
+  const [editingPersona, setEditingPersona] = useState(null);
+  const [showBubbleEditor, setShowBubbleEditor] = useState(false);
+  const [bubbleEditorType, setBubbleEditorType] = useState('char');
+  const avatarInputRef = useRef(null);
+  
+  const [charForm, setCharForm] = useState({
+    name: '', avatar: '', gender: 'other', age: 20, sexuality: '', persona: '',
+    // 装扮设置
+    bubbleImage: '',
+    bubbleColor: '',
+    bubbleLayers: [],     // 新增：气泡装饰图层
+    avatarFrame: '',
+    textColor: '',
+    fontSize: 14,
+    fontFamily: '',
+    customBubbleCSS: ''
+  });
+  
+  const [personaForm, setPersonaForm] = useState({
+    name: '', avatar: '', gender: 'other', age: 20, persona: '',
+    // 装扮设置
+    bubbleImage: '',
+    bubbleColor: '',
+    bubbleLayers: [],     // 新增：气泡装饰图层
+    avatarFrame: '',
+    textColor: '',
+    fontSize: 14,
+    fontFamily: '',
+    customBubbleCSS: ''
+  });
 
+      // ========== 气泡编辑器组件 ==========
+  const BubbleEditor = ({ layers, setLayers, onClose, onSave }) => {
+    const [tempLayers, setTempLayers] = useState(() => JSON.parse(JSON.stringify(layers || [])));
+    const [expandedLayer, setExpandedLayer] = useState(null);
+    const [draggingId, setDraggingId] = useState(null);
+    const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
+    const [layerStartPos, setLayerStartPos] = useState({ x: 0, y: 0 });
+    const fileInputRef = useRef(null);
+    
+    // 锚点选项
+    const anchorOptions = [
+      { id: 'top-left', label: '↖ 左上', style: { top: 0, left: 0 } },
+      { id: 'top-right', label: '↗ 右上', style: { top: 0, right: 0 } },
+      { id: 'bottom-left', label: '↙ 左下', style: { bottom: 0, left: 0 } },
+      { id: 'bottom-right', label: '↘ 右下', style: { bottom: 0, right: 0 } },
+      { id: 'center', label: '◎ 居中', style: { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' } },
+    ];
+    
+    const addLayer = (imageUrl) => {
+      const newLayer = {
+        id: generateId(),
+        url: imageUrl,
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 80,
+        zIndex: tempLayers.length,
+        opacity: 100,
+        rotation: 0,
+        anchor: 'top-left'  // 默认锚点
+      };
+      setTempLayers(prev => [...prev, newLayer]);
+      setExpandedLayer(newLayer.id);
+    };
+    
+    const handleUpload = (e) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => addLayer(ev.target.result);
+        reader.readAsDataURL(file);
+      }
+      e.target.value = '';
+    };
+    
+    const handleAddFromUrl = () => {
+      const url = prompt('请输入图片URL：');
+      if (url && url.trim()) addLayer(url.trim());
+    };
+    
+    const updateLayer = (id, updates) => {
+      setTempLayers(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
+    };
+    
+    const deleteLayer = (id) => {
+      setTempLayers(prev => prev.filter(l => l.id !== id));
+      if (expandedLayer === id) setExpandedLayer(null);
+      if (draggingId === id) setDraggingId(null);
+    };
+    
+    const moveLayerOrder = (id, direction) => {
+      setTempLayers(prev => {
+        const newLayers = [...prev];
+        const index = newLayers.findIndex(l => l.id === id);
+        if (direction === 'up' && index < newLayers.length - 1) {
+          [newLayers[index], newLayers[index + 1]] = [newLayers[index + 1], newLayers[index]];
+        } else if (direction === 'down' && index > 0) {
+          [newLayers[index], newLayers[index - 1]] = [newLayers[index - 1], newLayers[index]];
+        }
+        newLayers.forEach((l, i) => l.zIndex = i);
+        return newLayers;
+      });
+    };
+    
+    const handleSave = () => {
+      setLayers(tempLayers);
+      onSave();
+    };
+    
+    const handleCancel = () => {
+      onClose();
+    };
+    
+    const getClientPos = (e) => {
+      if (e.touches && e.touches.length > 0) {
+        return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      }
+      return { x: e.clientX, y: e.clientY };
+    };
+    
+    const startDrag = (e, layerId) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const pos = getClientPos(e);
+      const layer = tempLayers.find(l => l.id === layerId);
+      if (layer) {
+        setDraggingId(layerId);
+        setDragStartPos(pos);
+        setLayerStartPos({ x: layer.x, y: layer.y });
+      }
+    };
+    
+    const onDrag = (e) => {
+      if (!draggingId) return;
+      e.preventDefault();
+      const pos = getClientPos(e);
+      const deltaX = pos.x - dragStartPos.x;
+      const deltaY = pos.y - dragStartPos.y;
+      updateLayer(draggingId, { 
+        x: layerStartPos.x + deltaX, 
+        y: layerStartPos.y + deltaY 
+      });
+    };
+    
+    const endDrag = () => {
+      setDraggingId(null);
+    };
+    
+    const toggleExpand = (layerId) => {
+      setExpandedLayer(prev => prev === layerId ? null : layerId);
+    };
+    
+    // 根据锚点计算图层样式
+    const getLayerStyle = (layer) => {
+      const baseStyle = {
+        position: 'absolute',
+        width: `${layer.width}px`,
+        height: `${layer.height}px`,
+        opacity: layer.opacity / 100,
+        zIndex: layer.zIndex + 10,
+        cursor: draggingId === layer.id ? 'grabbing' : 'grab'
+      };
+      
+      const anchor = layer.anchor || 'top-left';
+      
+      switch (anchor) {
+        case 'top-left':
+          return {
+            ...baseStyle,
+            top: `${layer.y}px`,
+            left: `${layer.x}px`,
+            transform: `rotate(${layer.rotation}deg)`
+          };
+        case 'top-right':
+          return {
+            ...baseStyle,
+            top: `${layer.y}px`,
+            right: `${layer.x}px`,
+            transform: `rotate(${layer.rotation}deg)`
+          };
+        case 'bottom-left':
+          return {
+            ...baseStyle,
+            bottom: `${layer.y}px`,
+            left: `${layer.x}px`,
+            transform: `rotate(${layer.rotation}deg)`
+          };
+        case 'bottom-right':
+          return {
+            ...baseStyle,
+            bottom: `${layer.y}px`,
+            right: `${layer.x}px`,
+            transform: `rotate(${layer.rotation}deg)`
+          };
+        case 'center':
+          return {
+            ...baseStyle,
+            top: '50%',
+            left: '50%',
+            transform: `translate(calc(-50% + ${layer.x}px), calc(-50% + ${layer.y}px)) rotate(${layer.rotation}deg)`
+          };
+        default:
+          return {
+            ...baseStyle,
+            top: `${layer.y}px`,
+            left: `${layer.x}px`,
+            transform: `rotate(${layer.rotation}deg)`
+          };
+      }
+    };
+    
+    return (
+      <div 
+        className="fixed inset-0 bg-black/90 z-[100] flex flex-col"
+        onMouseMove={onDrag}
+        onMouseUp={endDrag}
+        onMouseLeave={endDrag}
+        onTouchMove={onDrag}
+        onTouchEnd={endDrag}
+      >
+        {/* 顶部栏 */}
+        <div className="bg-gray-900 p-3 flex items-center justify-between flex-shrink-0 border-b border-gray-700">
+          <button onClick={handleCancel} className="text-gray-300 px-4 py-1.5 rounded-lg hover:bg-gray-800 active:bg-gray-700">
+            取消
+          </button>
+          <h3 className="text-white font-semibold">气泡装饰编辑器</h3>
+          <button onClick={handleSave} className="bg-green-500 text-white px-4 py-1.5 rounded-lg font-medium hover:bg-green-600 active:bg-green-700">
+            保存
+          </button>
+        </div>
+        
+        {/* 预览区 */}
+        <div className="flex-1 flex items-center justify-center p-4 overflow-hidden touch-none select-none">
+          <div 
+            className="relative bg-white rounded-2xl shadow-2xl overflow-visible" 
+            style={{ width: '260px', minHeight: '100px', padding: '14px 18px' }}
+          >
+            {/* 装饰图层 */}
+            {tempLayers.map(layer => (
+              <div
+                key={layer.id}
+                className={`touch-none select-none transition-shadow ${
+                  draggingId === layer.id 
+                    ? 'ring-2 ring-blue-500 ring-offset-2 shadow-lg' 
+                    : 'hover:ring-2 hover:ring-blue-300'
+                }`}
+                style={getLayerStyle(layer)}
+                onMouseDown={(e) => startDrag(e, layer.id)}
+                onTouchStart={(e) => startDrag(e, layer.id)}
+              >
+                <img 
+                  src={layer.url} 
+                  alt="" 
+                  className="w-full h-full object-contain pointer-events-none select-none" 
+                  draggable={false} 
+                />
+              </div>
+            ))}
+            {/* 预览文字 */}
+            <p className="relative z-0 text-gray-700 text-sm select-none pointer-events-none">
+              这是一条预览消息，可能会很长很长很长~
+            </p>
+          </div>
+        </div>
+        
+        {/* 底部控制区 */}
+        <div className="bg-gray-900 p-4 max-h-[50%] overflow-y-auto flex-shrink-0 border-t border-gray-700">
+          {/* 添加按钮 */}
+          <div className="flex gap-2 mb-4">
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+            <button 
+              onClick={() => fileInputRef.current?.click()} 
+              className="flex-1 py-2.5 bg-purple-500 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 active:bg-purple-600"
+            >
+              <Icon name="Upload" size={16} />上传图片
+            </button>
+            <button 
+              onClick={handleAddFromUrl} 
+              className="flex-1 py-2.5 bg-blue-500 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 active:bg-blue-600"
+            >
+              <Icon name="Link" size={16} />URL添加
+            </button>
+          </div>
+          
+          {/* 图层列表 */}
+          {tempLayers.length === 0 ? (
+            <div className="text-center text-gray-500 py-8">
+              <Icon name="Layers" size={40} className="mx-auto mb-2 opacity-50" />
+              <p className="text-sm">暂无装饰图层</p>
+              <p className="text-xs mt-1 text-gray-600">点击上方按钮添加图片</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {[...tempLayers].sort((a, b) => b.zIndex - a.zIndex).map((layer, idx) => {
+                const isExpanded = expandedLayer === layer.id;
+                return (
+                  <div 
+                    key={layer.id} 
+                    className={`rounded-xl overflow-hidden transition-colors ${isExpanded ? 'bg-blue-600' : 'bg-gray-800'}`}
+                  >
+                    {/* 列表项头部 */}
+                    <div 
+                      className="p-3 flex items-center gap-3 cursor-pointer"
+                      onClick={() => toggleExpand(layer.id)}
+                    >
+                      <img src={layer.url} alt="" className="w-10 h-10 object-contain bg-gray-700 rounded-lg flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-white text-sm font-medium">图层 {tempLayers.length - idx}</span>
+                        <span className="text-xs text-gray-400 ml-2">
+                          {anchorOptions.find(a => a.id === (layer.anchor || 'top-left'))?.label}
+                        </span>
+                      </div>
+                      
+                      <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => moveLayerOrder(layer.id, 'up')} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white rounded-lg hover:bg-white/10">
+                          <Icon name="ChevronUp" size={18} />
+                        </button>
+                        <button onClick={() => moveLayerOrder(layer.id, 'down')} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white rounded-lg hover:bg-white/10">
+                          <Icon name="ChevronDown" size={18} />
+                        </button>
+                        <button onClick={() => deleteLayer(layer.id)} className="w-8 h-8 flex items-center justify-center text-red-400 hover:text-red-300 rounded-lg hover:bg-white/10">
+                          <Icon name="Trash2" size={18} />
+                        </button>
+                      </div>
+                      
+                      <Icon name={isExpanded ? "ChevronUp" : "ChevronDown"} size={18} className="text-gray-400 ml-1 flex-shrink-0" />
+                    </div>
+                    
+                    {/* 展开的编辑面板 */}
+                    {isExpanded && (
+                      <div className="px-3 pb-3 space-y-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="h-px bg-white/20" />
+                        
+                        {/* 锚点选择 */}
+                        <div>
+                          <label className="text-xs text-gray-300 mb-2 block">📍 固定位置（锚点）</label>
+                          <div className="grid grid-cols-5 gap-1">
+                            {anchorOptions.map(opt => (
+                              <button
+                                key={opt.id}
+                                onClick={() => updateLayer(layer.id, { anchor: opt.id, x: 0, y: 0 })}
+                                className={`py-2 px-1 rounded-lg text-xs font-medium transition-colors ${
+                                  (layer.anchor || 'top-left') === opt.id
+                                    ? 'bg-blue-500 text-white'
+                                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                }`}
+                              >
+                                {opt.label.split(' ')[0]}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        {/* X/Y偏移 */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="flex justify-between mb-1.5">
+                              <label className="text-xs text-gray-300">X偏移</label>
+                              <span className="text-xs text-blue-300 font-mono">{layer.x}px</span>
+                            </div>
+                            <input 
+                              type="range" 
+                              min={-100} 
+                              max={100} 
+                              value={layer.x} 
+                              onChange={(e) => updateLayer(layer.id, { x: parseInt(e.target.value) })} 
+                              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-400" 
+                            />
+                          </div>
+                          <div>
+                            <div className="flex justify-between mb-1.5">
+                              <label className="text-xs text-gray-300">Y偏移</label>
+                              <span className="text-xs text-blue-300 font-mono">{layer.y}px</span>
+                            </div>
+                            <input 
+                              type="range" 
+                              min={-100} 
+                              max={100} 
+                              value={layer.y} 
+                              onChange={(e) => updateLayer(layer.id, { y: parseInt(e.target.value) })} 
+                              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-400" 
+                            />
+                          </div>
+                        </div>
+                        
+                        {/* 大小/透明度 */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="flex justify-between mb-1.5">
+                              <label className="text-xs text-gray-300">大小</label>
+                              <span className="text-xs text-blue-300 font-mono">{layer.width}px</span>
+                            </div>
+                            <input 
+                              type="range" 
+                              min={20} 
+                              max={200} 
+                              value={layer.width} 
+                              onChange={(e) => { 
+                                const s = parseInt(e.target.value); 
+                                updateLayer(layer.id, { width: s, height: s }); 
+                              }} 
+                              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-400" 
+                            />
+                          </div>
+                          <div>
+                            <div className="flex justify-between mb-1.5">
+                              <label className="text-xs text-gray-300">透明度</label>
+                              <span className="text-xs text-blue-300 font-mono">{layer.opacity}%</span>
+                            </div>
+                            <input 
+                              type="range" 
+                              min={10} 
+                              max={100} 
+                              value={layer.opacity} 
+                              onChange={(e) => updateLayer(layer.id, { opacity: parseInt(e.target.value) })} 
+                              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-400" 
+                            />
+                          </div>
+                        </div>
+                        
+                        {/* 旋转 */}
+                        <div>
+                          <div className="flex justify-between mb-1.5">
+                            <label className="text-xs text-gray-300">旋转角度</label>
+                            <span className="text-xs text-blue-300 font-mono">{layer.rotation}°</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min={-180} 
+                            max={180} 
+                            value={layer.rotation} 
+                            onChange={(e) => updateLayer(layer.id, { rotation: parseInt(e.target.value) })} 
+                            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-400" 
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          
+          <div className="mt-4 p-3 bg-gray-800/50 rounded-xl">
+            <p className="text-xs text-gray-400 text-center">
+              💡 选择锚点决定图片固定在气泡的哪个角落
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+      
       const handleAvatarUpload = (e, type) => {
   const file = e.target.files?.[0];
   if (file) {
@@ -2732,29 +3161,32 @@ const Settings = () => {
       };
 
       const openCharEditor = (char) => {
-        if (char) {
-          setEditingChar(char);
-          setCharForm({
-            name: char.name, 
-            avatar: char.avatar || '', 
-            gender: char.gender,
-            age: char.age, 
-            sexuality: char.sexuality, 
-            persona: char.persona,
-            bubbleImage: char.bubbleImage || '',
-            bubbleColor: char.bubbleColor || '',
-            avatarFrame: char.avatarFrame || '',
-            textColor: char.textColor || '',
-            fontSize: char.fontSize || 14,
-            fontFamily: char.fontFamily || ''
-          });
-        } else {
-          setEditingChar(null);
-          setCharForm({ 
-            name: '', avatar: '', gender: 'other', age: 20, sexuality: '', persona: '',
-            bubbleImage: '', bubbleColor: '', avatarFrame: '', textColor: '', fontSize: 14, fontFamily: ''
-          });
-        }
+  if (char) {
+    setEditingChar(char);
+    setCharForm({
+      name: char.name, 
+      avatar: char.avatar || '', 
+      gender: char.gender,
+      age: char.age, 
+      sexuality: char.sexuality, 
+      persona: char.persona,
+      bubbleImage: char.bubbleImage || '',
+      bubbleColor: char.bubbleColor || '',
+      bubbleLayers: char.bubbleLayers || [],
+      avatarFrame: char.avatarFrame || '',
+      textColor: char.textColor || '',
+      fontSize: char.fontSize || 14,
+      fontFamily: char.fontFamily || '',
+      customBubbleCSS: char.customBubbleCSS || ''
+    });
+  } else {
+    setEditingChar(null);
+    setCharForm({ 
+      name: '', avatar: '', gender: 'other', age: 20, sexuality: '', persona: '',
+      bubbleImage: '', bubbleColor: '', bubbleLayers: [], avatarFrame: '', 
+      textColor: '', fontSize: 14, fontFamily: '', customBubbleCSS: ''
+    });
+  }
         setShowEditor(true);
         setActiveTab('characters');
       };
@@ -2770,16 +3202,19 @@ const Settings = () => {
             persona: persona.persona,
             bubbleImage: persona.bubbleImage || '',
             bubbleColor: persona.bubbleColor || '',
+            bubbleLayers: persona.bubbleLayers || [],
             avatarFrame: persona.avatarFrame || '',
             textColor: persona.textColor || '',
             fontSize: persona.fontSize || 14,
-            fontFamily: persona.fontFamily || ''
+            fontFamily: persona.fontFamily || '',
+            customBubbleCSS: persona.customBubbleCSS || ''
           });
         } else {
           setEditingPersona(null);
           setPersonaForm({ 
             name: '', avatar: '', gender: 'other', age: 20, persona: '',
-            bubbleImage: '', bubbleColor: '', avatarFrame: '', textColor: '', fontSize: 14, fontFamily: ''
+            bubbleImage: '', bubbleColor: '', bubbleLayers: [], avatarFrame: '', 
+            textColor: '', fontSize: 14, fontFamily: '', customBubbleCSS: ''
           });
         }
         setShowEditor(true);
@@ -3021,74 +3456,126 @@ const Settings = () => {
                       
                       {/* 气泡设置 */}
                       <div className="space-y-3">
-                        {/* 气泡背景图上传 */}
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">💬 气泡背景图</label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={charForm.bubbleImage}
-                              onChange={(e) => setCharForm({ ...charForm, bubbleImage: e.target.value })}
-                              className="flex-1 p-2 bg-gray-100 rounded-lg text-sm"
-                              placeholder="图片URL或上传"
-                            />
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  const reader = new FileReader();
-                                  reader.onload = (ev) => setCharForm({ ...charForm, bubbleImage: ev.target.result });
-                                  reader.readAsDataURL(file);
-                                }
-                              }}
-                              className="hidden"
-                              id="charBubbleUpload"
-                            />
-                            <label
-                              htmlFor="charBubbleUpload"
-                              className="px-3 py-2 bg-purple-500 text-white text-xs rounded-lg cursor-pointer"
-                            >
-                              上传
-                            </label>
-                          </div>
-                          {charForm.bubbleImage && (
-                            <div className="mt-2 flex items-center gap-2">
-                              <div 
-                                className="w-24 h-12 rounded-lg bg-cover bg-center border"
-                                style={{ backgroundImage: `url(${charForm.bubbleImage})` }}
-                              />
-                              <button
-                                onClick={() => setCharForm({ ...charForm, bubbleImage: '' })}
-                                className="text-red-500 text-xs"
-                              >
-                                清除
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                        {/* 气泡装饰设置 */}
+<div>
+  <label className="block text-xs text-gray-500 mb-1">🎨 气泡装饰设置</label>
+  <button
+    onClick={() => {
+      setBubbleEditorType('char');
+      setShowBubbleEditor(true);
+    }}
+    className="w-full p-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+  >
+    <Icon name="Layers" size={18} />
+    打开气泡编辑器
+  </button>
+  {(charForm.bubbleLayers && charForm.bubbleLayers.length > 0) && (
+    <div className="mt-2 p-2 bg-gray-100 rounded-lg">
+      <p className="text-xs text-gray-500 mb-1">已添加 {charForm.bubbleLayers.length} 个装饰图层</p>
+      <div className="flex gap-1 flex-wrap">
+        {charForm.bubbleLayers.slice(0, 4).map((layer, i) => (
+          <img key={i} src={layer.url} alt="" className="w-8 h-8 object-contain bg-white rounded" />
+        ))}
+        {charForm.bubbleLayers.length > 4 && (
+          <span className="w-8 h-8 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">
+            +{charForm.bubbleLayers.length - 4}
+          </span>
+        )}
+      </div>
+    </div>
+  )}
+</div>
                         
                         <div className="flex gap-2">
-                          <div className="flex-1">
-                            <label className="block text-xs text-gray-500 mb-1">🎨 气泡颜色</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={charForm.bubbleColor || '#ffffff'}
-                                onChange={(e) => setCharForm({ ...charForm, bubbleColor: e.target.value })}
-                                className="w-10 h-10 rounded-lg cursor-pointer"
-                              />
-                              <input
-                                type="text"
-                                value={charForm.bubbleColor}
-                                onChange={(e) => setCharForm({ ...charForm, bubbleColor: e.target.value })}
-                                className="flex-1 p-2 bg-gray-100 rounded-lg text-sm"
-                                placeholder="#ffffff"
-                              />
-                            </div>
-                          </div>
-                        </div>
+  <div className="flex-1">
+    <label className="block text-xs text-gray-500 mb-1">🎨 气泡颜色</label>
+    <div className="flex gap-2">
+      <input
+        type="color"
+        value={(charForm.bubbleColor || '#ffffff').startsWith('#') ? charForm.bubbleColor : '#ffffff'}
+        onChange={(e) => setCharForm({ ...charForm, bubbleColor: e.target.value })}
+        className="w-10 h-10 rounded-lg cursor-pointer"
+      />
+      <input
+        type="text"
+        value={charForm.bubbleColor}
+        onChange={(e) => setCharForm({ ...charForm, bubbleColor: e.target.value })}
+        className="flex-1 p-2 bg-gray-100 rounded-lg text-sm"
+        placeholder="#ffffff 或 linear-gradient(...)"
+      />
+    </div>
+    {/* 随机渐变按钮 */}
+    <div className="flex gap-2 mt-2">
+      <button
+        type="button"
+        onClick={() => {
+          const colors = [
+            ['#ff9a9e', '#fecfef'], ['#a18cd1', '#fbc2eb'], ['#ffecd2', '#fcb69f'],
+            ['#ff9966', '#ff5e62'], ['#56ccf2', '#2f80ed'], ['#f093fb', '#f5576c'],
+            ['#4facfe', '#00f2fe'], ['#43e97b', '#38f9d7'], ['#fa709a', '#fee140'],
+            ['#a8edea', '#fed6e3'], ['#d299c2', '#fef9d7'], ['#89f7fe', '#66a6ff'],
+            ['#cd9cf2', '#f6f3ff'], ['#ffeaa7', '#dfe6e9'], ['#fd79a8', '#fdcb6e'],
+            ['#e17055', '#fdcb6e'], ['#00b894', '#00cec9'], ['#6c5ce7', '#a29bfe'],
+            ['#fdcb6e', '#e17055'], ['#00cec9', '#81ecec'], ['#fab1a0', '#ff7675']
+          ];
+          const pair = colors[Math.floor(Math.random() * colors.length)];
+          const angle = Math.floor(Math.random() * 360);
+          const gradient = `linear-gradient(${angle}deg, ${pair[0]} 0%, ${pair[1]} 100%)`;
+          setCharForm({ ...charForm, bubbleColor: gradient });
+        }}
+        className="flex-1 py-2 bg-gradient-to-r from-pink-400 to-purple-500 text-white text-xs rounded-lg"
+      >
+        🎲 随机渐变
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const colors = [
+            ['#ff6b6b', '#feca57', '#48dbfb'],
+            ['#ff9ff3', '#feca57', '#54a0ff'],
+            ['#5f27cd', '#341f97', '#2e86de'],
+            ['#00d2d3', '#54a0ff', '#5f27cd'],
+            ['#ff6b6b', '#ee5a24', '#f368e0'],
+            ['#1dd1a1', '#10ac84', '#00d2d3']
+          ];
+          const trio = colors[Math.floor(Math.random() * colors.length)];
+          const angle = Math.floor(Math.random() * 360);
+          const gradient = `linear-gradient(${angle}deg, ${trio[0]} 0%, ${trio[1]} 50%, ${trio[2]} 100%)`;
+          setCharForm({ ...charForm, bubbleColor: gradient });
+        }}
+        className="flex-1 py-2 bg-gradient-to-r from-blue-400 to-green-500 text-white text-xs rounded-lg"
+      >
+        🌈 三色渐变
+      </button>
+    </div>
+    {/* 预设渐变选择 */}
+    <div className="grid grid-cols-6 gap-1 mt-2">
+      {[
+        'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
+        'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
+        'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)',
+        'linear-gradient(135deg, #56ccf2 0%, #2f80ed 100%)',
+        'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+        'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+        'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+        'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+        'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
+        'linear-gradient(135deg, #d299c2 0%, #fef9d7 100%)',
+        'linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%)',
+      ].map((gradient, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => setCharForm({ ...charForm, bubbleColor: gradient })}
+          className="w-full h-8 rounded-lg border-2 border-transparent hover:border-purple-400 transition-all"
+          style={{ background: gradient }}
+          title="点击使用此渐变"
+        />
+      ))}
+    </div>
+  </div>
+</div>
 
                         {/* 头像挂件上传 */}
                         <div>
@@ -3193,56 +3680,108 @@ const Settings = () => {
                         </div>
 
                         {/* 自定义CSS */}
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">💻 自定义气泡CSS</label>
-                          <textarea
-                            value={charForm.customBubbleCSS || ''}
-                            onChange={(e) => setCharForm({ ...charForm, customBubbleCSS: e.target.value })}
-                            className="w-full h-24 p-2 bg-gray-100 rounded-lg text-xs font-mono resize-none"
-                            placeholder={`/* 气泡样式示例 */
-border-radius: 20px;
-box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-border: 2px solid gold;
-backdrop-filter: blur(10px);`}
-                          />
-                          <p className="text-xs text-gray-400 mt-1">
-                            直接写CSS属性，应用到该角色的气泡上
-                          </p>
-                        </div>
+<div>
+  <label className="block text-xs text-gray-500 mb-1">💻 自定义气泡CSS</label>
+  <textarea
+    value={charForm.customBubbleCSS || ''}
+    onChange={(e) => setCharForm({ ...charForm, customBubbleCSS: e.target.value })}
+    className="w-full h-28 p-2 bg-gray-100 rounded-lg text-xs font-mono resize-none"
+    placeholder={`/* 基础样式 */
+background: linear-gradient(135deg, #fff 0%, #f0f0f0 100%);
+border: 2px solid #pink;
+border-radius: 18px;
+box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+
+/* 装饰图片（可选） */
+--deco-top-right-url: url(图片链接);
+--deco-top-right-size: 30px 30px;
+--deco-top-right-offset: -5px -5px;`}
+  />
+  <p className="text-xs text-gray-400 mt-1">
+    💡 装饰位置：top-left, top-right, bottom-left, bottom-right, left, right
+  </p>
+</div>
 
                         {/* 预览 */}
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">👁️ 气泡预览</label>
-                          <div className="bg-gray-200 rounded-xl p-4">
-                            <div 
-                              className="max-w-[200px] rounded-2xl px-3 py-2 text-sm"
-                              style={{
-                                backgroundColor: charForm.bubbleColor || '#ffffff',
-                                backgroundImage: charForm.bubbleImage ? `url(${charForm.bubbleImage})` : 'none',
-                                backgroundSize: 'cover',
-                                backgroundPosition: 'center',
-                                color: charForm.textColor || '#333333',
-                                fontSize: `${charForm.fontSize || 14}px`,
-                                fontFamily: charForm.fontFamily || 'inherit',
-                                ...(charForm.customBubbleCSS ? (() => {
-                                  try {
-                                    const style = {};
-                                    charForm.customBubbleCSS.split(';').forEach(rule => {
-                                      const [prop, val] = rule.split(':').map(s => s.trim());
-                                      if (prop && val) {
-                                        const camelProp = prop.replace(/-([a-z])/g, g => g[1].toUpperCase());
-                                        style[camelProp] = val;
-                                      }
-                                    });
-                                    return style;
-                                  } catch { return {}; }
-                                })() : {})
-                              }}
-                            >
-                              这是一条预览消息~
-                            </div>
-                          </div>
-                        </div>
+<div>
+  <label className="block text-xs text-gray-500 mb-1">👁️ 气泡预览</label>
+  <div className="bg-gray-200 rounded-xl p-4">
+    <div 
+      className="relative max-w-[200px] rounded-2xl px-3 py-2 text-sm overflow-visible"
+      style={{
+        backgroundColor: charForm.bubbleColor || '#ffffff',
+        backgroundImage: charForm.bubbleImage ? `url(${charForm.bubbleImage})` : 'none',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        color: charForm.textColor || '#333333',
+        fontSize: `${charForm.fontSize || 14}px`,
+        fontFamily: charForm.fontFamily || 'inherit',
+        ...(charForm.customBubbleCSS ? (() => {
+          try {
+            const style = {};
+            charForm.customBubbleCSS.split(';').forEach(rule => {
+              const [prop, val] = rule.split(':').map(s => s.trim());
+              if (prop && val && !prop.startsWith('--')) {
+                const camelProp = prop.replace(/-([a-z])/g, g => g[1].toUpperCase());
+                style[camelProp] = val;
+              }
+            });
+            return style;
+          } catch { return {}; }
+        })() : {})
+      }}
+    >
+      {/* 装饰图层预览 */}
+      {(charForm.bubbleLayers || []).map((layer, idx) => {
+        const anchor = layer.anchor || 'top-left';
+        let positionStyle = {};
+        
+        switch (anchor) {
+          case 'top-left':
+            positionStyle = { top: `${layer.y}px`, left: `${layer.x}px` };
+            break;
+          case 'top-right':
+            positionStyle = { top: `${layer.y}px`, right: `${layer.x}px` };
+            break;
+          case 'bottom-left':
+            positionStyle = { bottom: `${layer.y}px`, left: `${layer.x}px` };
+            break;
+          case 'bottom-right':
+            positionStyle = { bottom: `${layer.y}px`, right: `${layer.x}px` };
+            break;
+          case 'center':
+            positionStyle = { 
+              top: '50%', 
+              left: '50%', 
+              transform: `translate(calc(-50% + ${layer.x}px), calc(-50% + ${layer.y}px)) rotate(${layer.rotation || 0}deg)` 
+            };
+            break;
+          default:
+            positionStyle = { top: `${layer.y}px`, left: `${layer.x}px` };
+        }
+        
+        return (
+          <div
+            key={layer.id || idx}
+            style={{
+              position: 'absolute',
+              ...positionStyle,
+              transform: anchor !== 'center' ? `rotate(${layer.rotation || 0}deg)` : positionStyle.transform,
+              width: `${layer.width}px`,
+              height: `${layer.height}px`,
+              opacity: (layer.opacity || 100) / 100,
+              zIndex: layer.zIndex || idx,
+              pointerEvents: 'none'
+            }}
+          >
+            <img src={layer.url} alt="" className="w-full h-full object-contain" draggable={false} />
+          </div>
+        );
+      })}
+      <span className="relative z-10">这是一条预览消息~</span>
+    </div>
+  </div>
+</div>
                       </div>
                     </div>
                   </div>
@@ -3339,74 +3878,126 @@ backdrop-filter: blur(10px);`}
                       <h3 className="text-sm font-semibold text-gray-700 mb-3">✨ 个性装扮</h3>
                       
                       <div className="space-y-3">
-                        {/* 气泡背景图上传 */}
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">💬 气泡背景图</label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={personaForm.bubbleImage}
-                              onChange={(e) => setPersonaForm({ ...personaForm, bubbleImage: e.target.value })}
-                              className="flex-1 p-2 bg-gray-100 rounded-lg text-sm"
-                              placeholder="图片URL或上传"
-                            />
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  const reader = new FileReader();
-                                  reader.onload = (ev) => setPersonaForm({ ...personaForm, bubbleImage: ev.target.result });
-                                  reader.readAsDataURL(file);
-                                }
-                              }}
-                              className="hidden"
-                              id="personaBubbleUpload"
-                            />
-                            <label
-                              htmlFor="personaBubbleUpload"
-                              className="px-3 py-2 bg-blue-500 text-white text-xs rounded-lg cursor-pointer"
-                            >
-                              上传
-                            </label>
-                          </div>
-                          {personaForm.bubbleImage && (
-                            <div className="mt-2 flex items-center gap-2">
-                              <div 
-                                className="w-24 h-12 rounded-lg bg-cover bg-center border"
-                                style={{ backgroundImage: `url(${personaForm.bubbleImage})` }}
-                              />
-                              <button
-                                onClick={() => setPersonaForm({ ...personaForm, bubbleImage: '' })}
-                                className="text-red-500 text-xs"
-                              >
-                                清除
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                        {/* 气泡装饰设置 */}
+<div>
+  <label className="block text-xs text-gray-500 mb-1">🎨 气泡装饰设置</label>
+  <button
+    onClick={() => {
+      setBubbleEditorType('persona');
+      setShowBubbleEditor(true);
+    }}
+    className="w-full p-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+  >
+    <Icon name="Layers" size={18} />
+    打开气泡编辑器
+  </button>
+  {(personaForm.bubbleLayers && personaForm.bubbleLayers.length > 0) && (
+    <div className="mt-2 p-2 bg-gray-100 rounded-lg">
+      <p className="text-xs text-gray-500 mb-1">已添加 {personaForm.bubbleLayers.length} 个装饰图层</p>
+      <div className="flex gap-1 flex-wrap">
+        {personaForm.bubbleLayers.slice(0, 4).map((layer, i) => (
+          <img key={i} src={layer.url} alt="" className="w-8 h-8 object-contain bg-white rounded" />
+        ))}
+        {personaForm.bubbleLayers.length > 4 && (
+          <span className="w-8 h-8 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">
+            +{personaForm.bubbleLayers.length - 4}
+          </span>
+        )}
+      </div>
+    </div>
+  )}
+</div>
                         
                         <div className="flex gap-2">
-                          <div className="flex-1">
-                            <label className="block text-xs text-gray-500 mb-1">🎨 气泡颜色</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={personaForm.bubbleColor || '#07c160'}
-                                onChange={(e) => setPersonaForm({ ...personaForm, bubbleColor: e.target.value })}
-                                className="w-10 h-10 rounded-lg cursor-pointer"
-                              />
-                              <input
-                                type="text"
-                                value={personaForm.bubbleColor}
-                                onChange={(e) => setPersonaForm({ ...personaForm, bubbleColor: e.target.value })}
-                                className="flex-1 p-2 bg-gray-100 rounded-lg text-sm"
-                                placeholder="#07c160"
-                              />
-                            </div>
-                          </div>
-                        </div>
+  <div className="flex-1">
+    <label className="block text-xs text-gray-500 mb-1">🎨 气泡颜色</label>
+    <div className="flex gap-2">
+      <input
+        type="color"
+        value={(personaForm.bubbleColor || '#07c160').startsWith('#') ? personaForm.bubbleColor : '#07c160'}
+        onChange={(e) => setPersonaForm({ ...personaForm, bubbleColor: e.target.value })}
+        className="w-10 h-10 rounded-lg cursor-pointer"
+      />
+      <input
+        type="text"
+        value={personaForm.bubbleColor}
+        onChange={(e) => setPersonaForm({ ...personaForm, bubbleColor: e.target.value })}
+        className="flex-1 p-2 bg-gray-100 rounded-lg text-sm"
+        placeholder="#07c160 或 linear-gradient(...)"
+      />
+    </div>
+    {/* 随机渐变按钮 */}
+    <div className="flex gap-2 mt-2">
+      <button
+        type="button"
+        onClick={() => {
+          const colors = [
+            ['#ff9a9e', '#fecfef'], ['#a18cd1', '#fbc2eb'], ['#ffecd2', '#fcb69f'],
+            ['#ff9966', '#ff5e62'], ['#56ccf2', '#2f80ed'], ['#f093fb', '#f5576c'],
+            ['#4facfe', '#00f2fe'], ['#43e97b', '#38f9d7'], ['#fa709a', '#fee140'],
+            ['#a8edea', '#fed6e3'], ['#d299c2', '#fef9d7'], ['#89f7fe', '#66a6ff'],
+            ['#cd9cf2', '#f6f3ff'], ['#ffeaa7', '#dfe6e9'], ['#fd79a8', '#fdcb6e'],
+            ['#e17055', '#fdcb6e'], ['#00b894', '#00cec9'], ['#6c5ce7', '#a29bfe'],
+            ['#fdcb6e', '#e17055'], ['#00cec9', '#81ecec'], ['#fab1a0', '#ff7675']
+          ];
+          const pair = colors[Math.floor(Math.random() * colors.length)];
+          const angle = Math.floor(Math.random() * 360);
+          const gradient = `linear-gradient(${angle}deg, ${pair[0]} 0%, ${pair[1]} 100%)`;
+          setPersonaForm({ ...personaForm, bubbleColor: gradient });
+        }}
+        className="flex-1 py-2 bg-gradient-to-r from-pink-400 to-purple-500 text-white text-xs rounded-lg"
+      >
+        🎲 随机渐变
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const colors = [
+            ['#ff6b6b', '#feca57', '#48dbfb'],
+            ['#ff9ff3', '#feca57', '#54a0ff'],
+            ['#5f27cd', '#341f97', '#2e86de'],
+            ['#00d2d3', '#54a0ff', '#5f27cd'],
+            ['#ff6b6b', '#ee5a24', '#f368e0'],
+            ['#1dd1a1', '#10ac84', '#00d2d3']
+          ];
+          const trio = colors[Math.floor(Math.random() * colors.length)];
+          const angle = Math.floor(Math.random() * 360);
+          const gradient = `linear-gradient(${angle}deg, ${trio[0]} 0%, ${trio[1]} 50%, ${trio[2]} 100%)`;
+          setPersonaForm({ ...personaForm, bubbleColor: gradient });
+        }}
+        className="flex-1 py-2 bg-gradient-to-r from-blue-400 to-green-500 text-white text-xs rounded-lg"
+      >
+        🌈 三色渐变
+      </button>
+    </div>
+    {/* 预设渐变选择 */}
+    <div className="grid grid-cols-6 gap-1 mt-2">
+      {[
+        'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
+        'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
+        'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)',
+        'linear-gradient(135deg, #56ccf2 0%, #2f80ed 100%)',
+        'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+        'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+        'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+        'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+        'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
+        'linear-gradient(135deg, #d299c2 0%, #fef9d7 100%)',
+        'linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%)',
+      ].map((gradient, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => setPersonaForm({ ...personaForm, bubbleColor: gradient })}
+          className="w-full h-8 rounded-lg border-2 border-transparent hover:border-blue-400 transition-all"
+          style={{ background: gradient }}
+          title="点击使用此渐变"
+        />
+      ))}
+    </div>
+  </div>
+</div>
 
                         {/* 头像挂件上传 */}
                         <div>
@@ -3509,55 +4100,107 @@ backdrop-filter: blur(10px);`}
                         </div>
 
                         {/* 自定义CSS */}
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">💻 自定义气泡CSS</label>
-                          <textarea
-                            value={personaForm.customBubbleCSS || ''}
-                            onChange={(e) => setPersonaForm({ ...personaForm, customBubbleCSS: e.target.value })}
-                            className="w-full h-24 p-2 bg-gray-100 rounded-lg text-xs font-mono resize-none"
-                            placeholder={`/* 气泡样式示例 */
-border-radius: 20px;
-box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-border: 2px solid gold;`}
-                          />
-                          <p className="text-xs text-gray-400 mt-1">
-                            直接写CSS属性，应用到你的气泡上
-                          </p>
-                        </div>
+<div>
+  <label className="block text-xs text-gray-500 mb-1">💻 自定义气泡CSS</label>
+  <textarea
+    value={personaForm.customBubbleCSS || ''}
+    onChange={(e) => setPersonaForm({ ...personaForm, customBubbleCSS: e.target.value })}
+    className="w-full h-28 p-2 bg-gray-100 rounded-lg text-xs font-mono resize-none"
+    placeholder={`/* 基础样式 */
+background: linear-gradient(135deg, #95ec69 0%, #7ed957 100%);
+border-radius: 18px 18px 4px 18px;
+box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+
+/* 装饰图片（可选） */
+--deco-bottom-right-url: url(图片链接);
+--deco-bottom-right-size: 20px 20px;
+--deco-bottom-right-offset: 5px 5px;`}
+  />
+  <p className="text-xs text-gray-400 mt-1">
+    💡 装饰位置：top-left, top-right, bottom-left, bottom-right, left, right
+  </p>
+</div>
 
                         {/* 预览 */}
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">👁️ 气泡预览</label>
-                          <div className="bg-gray-200 rounded-xl p-4 flex justify-end">
-                            <div 
-                              className="max-w-[200px] rounded-2xl px-3 py-2 text-sm"
-                              style={{
-                                backgroundColor: personaForm.bubbleColor || '#07c160',
-                                backgroundImage: personaForm.bubbleImage ? `url(${personaForm.bubbleImage})` : 'none',
-                                backgroundSize: 'cover',
-                                backgroundPosition: 'center',
-                                color: personaForm.textColor || '#ffffff',
-                                fontSize: `${personaForm.fontSize || 14}px`,
-                                fontFamily: personaForm.fontFamily || 'inherit',
-                                ...(personaForm.customBubbleCSS ? (() => {
-                                  try {
-                                    const style = {};
-                                    personaForm.customBubbleCSS.split(';').forEach(rule => {
-                                      const [prop, val] = rule.split(':').map(s => s.trim());
-                                      if (prop && val) {
-                                        const camelProp = prop.replace(/-([a-z])/g, g => g[1].toUpperCase());
-                                        style[camelProp] = val;
-                                      }
-                                    });
-                                    return style;
-                                  } catch { return {}; }
-                                })() : {})
-                              }}
-                            >
-                              这是我发的消息~
-                            </div>
-                          </div>
-                        </div>
+<div>
+  <label className="block text-xs text-gray-500 mb-1">👁️ 气泡预览</label>
+  <div className="bg-gray-200 rounded-xl p-4 flex justify-end">
+    <div 
+      className="relative max-w-[200px] rounded-2xl px-3 py-2 text-sm overflow-visible"
+      style={{
+        backgroundColor: personaForm.bubbleColor || '#07c160',
+        backgroundImage: personaForm.bubbleImage ? `url(${personaForm.bubbleImage})` : 'none',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        color: personaForm.textColor || '#ffffff',
+        fontSize: `${personaForm.fontSize || 14}px`,
+        fontFamily: personaForm.fontFamily || 'inherit',
+        ...(personaForm.customBubbleCSS ? (() => {
+          try {
+            const style = {};
+            personaForm.customBubbleCSS.split(';').forEach(rule => {
+              const [prop, val] = rule.split(':').map(s => s.trim());
+              if (prop && val && !prop.startsWith('--')) {
+                const camelProp = prop.replace(/-([a-z])/g, g => g[1].toUpperCase());
+                style[camelProp] = val;
+              }
+            });
+            return style;
+          } catch { return {}; }
+        })() : {})
+      }}
+    >
+      {/* 装饰图层预览 */}
+      {(personaForm.bubbleLayers || []).map((layer, idx) => {
+        const anchor = layer.anchor || 'top-left';
+        let positionStyle = {};
+        
+        switch (anchor) {
+          case 'top-left':
+            positionStyle = { top: `${layer.y}px`, left: `${layer.x}px` };
+            break;
+          case 'top-right':
+            positionStyle = { top: `${layer.y}px`, right: `${layer.x}px` };
+            break;
+          case 'bottom-left':
+            positionStyle = { bottom: `${layer.y}px`, left: `${layer.x}px` };
+            break;
+          case 'bottom-right':
+            positionStyle = { bottom: `${layer.y}px`, right: `${layer.x}px` };
+            break;
+          case 'center':
+            positionStyle = { 
+              top: '50%', 
+              left: '50%', 
+              transform: `translate(calc(-50% + ${layer.x}px), calc(-50% + ${layer.y}px)) rotate(${layer.rotation || 0}deg)` 
+            };
+            break;
+          default:
+            positionStyle = { top: `${layer.y}px`, left: `${layer.x}px` };
+        }
+        
+        return (
+          <div
+            key={layer.id || idx}
+            style={{
+              position: 'absolute',
+              ...positionStyle,
+              transform: anchor !== 'center' ? `rotate(${layer.rotation || 0}deg)` : positionStyle.transform,
+              width: `${layer.width}px`,
+              height: `${layer.height}px`,
+              opacity: (layer.opacity || 100) / 100,
+              zIndex: layer.zIndex || idx,
+              pointerEvents: 'none'
+            }}
+          >
+            <img src={layer.url} alt="" className="w-full h-full object-contain" draggable={false} />
+          </div>
+        );
+      })}
+      <span className="relative z-10">这是我发的消息~</span>
+    </div>
+  </div>
+</div>
                       </div>
                     </div>
                   </div>
@@ -3576,6 +4219,22 @@ border: 2px solid gold;`}
                 </div>
               </div>
             </div>
+          )}
+          
+          {/* 气泡编辑器弹窗 */}
+          {showBubbleEditor && (
+            <BubbleEditor
+              layers={bubbleEditorType === 'char' ? (charForm.bubbleLayers || []) : (personaForm.bubbleLayers || [])}
+              setLayers={(newLayers) => {
+                if (bubbleEditorType === 'char') {
+                  setCharForm({ ...charForm, bubbleLayers: newLayers });
+                } else {
+                  setPersonaForm({ ...personaForm, bubbleLayers: newLayers });
+                }
+              }}
+              onClose={() => setShowBubbleEditor(false)}
+              onSave={() => setShowBubbleEditor(false)}
+            />
           )}
         </div>
       );
@@ -5364,87 +6023,114 @@ if (msg.type === 'shared_post' && msg.sharedPost) {
         const parsedContent = (!isUser && chat.mode === 'offline') ? parseMessageContent(msg.content) : null;
         
         // 渲染对话气泡的辅助函数
-        const renderBubble = (content, styleOwner, isUserBubble) => {
-          const textStyle = {};
-          if (styleOwner?.textColor) textStyle.color = styleOwner.textColor;
-          if (styleOwner?.fontSize) textStyle.fontSize = `${styleOwner.fontSize}px`;
-          if (styleOwner?.fontFamily) textStyle.fontFamily = styleOwner.fontFamily;
-          
-          const hasBubbleImage = !!styleOwner?.bubbleImage;
-          const hasBubbleColor = !!styleOwner?.bubbleColor;
-          
-          let customCSS = {};
-          if (styleOwner?.customBubbleCSS) {
-            try {
-              styleOwner.customBubbleCSS.split(';').forEach(rule => {
-                const colonIndex = rule.indexOf(':');
-                if (colonIndex > 0) {
-                  const prop = rule.slice(0, colonIndex).trim();
-                  const val = rule.slice(colonIndex + 1).trim();
-                  if (prop && val) {
-                    const camelProp = prop.replace(/-([a-z])/g, g => g[1].toUpperCase());
-                    customCSS[camelProp] = val;
-                  }
-                }
-              });
-            } catch (e) {}
+const renderBubble = (content, styleOwner, isUserBubble) => {
+  // 文字样式
+  const textStyle = {};
+  if (styleOwner?.textColor) textStyle.color = styleOwner.textColor;
+  if (styleOwner?.fontSize) textStyle.fontSize = `${styleOwner.fontSize}px`;
+  if (styleOwner?.fontFamily) textStyle.fontFamily = styleOwner.fontFamily;
+  
+  // 解析自定义CSS
+  let customCSS = {};
+  const cssText = styleOwner?.customBubbleCSS || '';
+  if (cssText) {
+    try {
+      cssText.split(';').forEach(rule => {
+        const colonIndex = rule.indexOf(':');
+        if (colonIndex > 0) {
+          const prop = rule.slice(0, colonIndex).trim();
+          const val = rule.slice(colonIndex + 1).trim();
+          if (prop && val && !prop.startsWith('--')) {
+            const camelProp = prop.replace(/-([a-z])/g, g => g[1].toUpperCase());
+            customCSS[camelProp] = val;
           }
-          
-          if (hasBubbleImage) {
-            return (
-              <div 
-                className="relative inline-block"
-                style={{
-                  // 核心修复：使用 border-image 实现九宫格拉伸
-                  borderStyle: 'solid',
-                  // 这四个数值决定了边框占用的空间，你可以根据效果微调
-                  borderWidth: '25px 30px 35px 45px', 
-                  // 60-120 这些数值决定了保护多少像素不被拉伸（对应星星和尾巴的位置）
-                  borderImageSource: `url(${styleOwner.bubbleImage})`,
-                  borderImageSlice: '80 100 100 130 fill', 
-                  borderImageRepeat: 'stretch',
-                  // 确保气泡不会太窄
-                  minWidth: '100px',
-                  filter: 'drop-shadow(0 2px 5px rgba(0,0,0,0.1))',
-                  ...customCSS
-                }}
-              >
-                {/* 文字内容：通过负边距抵消掉 border 占用的空间，让文字回到中间 */}
-                <p 
-                  className="relative whitespace-pre-wrap break-words leading-relaxed" 
-                  style={{ 
-                    margin: '-10px -10px -15px -15px',
-                    ...textStyle 
-                  }}
-                >
-                  {content}
-                </p>
-              </div>
-            );
-          }
-          
-          const bubbleStyle = {};
-          if (hasBubbleColor) {
-            if (styleOwner.bubbleColor.includes('gradient')) {
-              bubbleStyle.background = styleOwner.bubbleColor;
-            } else {
-              bubbleStyle.backgroundColor = styleOwner.bubbleColor;
-            }
-          }
-          
-          const hasCustom = hasBubbleColor || styleOwner?.customBubbleCSS;
-          
-          return (
-            <div 
-              className={hasCustom ? 'rounded-2xl inline-block' : (isUserBubble ? 'chat-bubble-user' : 'chat-bubble-ai')}
-              style={{ ...bubbleStyle, ...customCSS }}
-            >
-              <p className="px-3 py-2 whitespace-pre-wrap break-words leading-relaxed" style={textStyle}>
-                {content}
-              </p>
-            </div>
-          );
-        };
+        }
+      });
+    } catch (e) {}
+  }
+  
+  // 气泡基础样式
+  const bubbleStyle = {
+    position: 'relative',
+    borderRadius: '18px',
+    overflow: 'visible',
+    ...customCSS
+  };
+  
+  // 气泡颜色
+  if (styleOwner?.bubbleColor) {
+    if (styleOwner.bubbleColor.includes('gradient')) {
+      bubbleStyle.background = styleOwner.bubbleColor;
+    } else {
+      bubbleStyle.backgroundColor = styleOwner.bubbleColor;
+    }
+  } else if (!customCSS.background && !customCSS.backgroundColor) {
+    bubbleStyle.backgroundColor = isUserBubble ? '#95ec69' : '#ffffff';
+  }
+  
+  // 获取气泡图层
+  const bubbleLayers = styleOwner?.bubbleLayers || [];
+
+  return (
+    <div className="relative inline-block" style={bubbleStyle}>
+      {/* 气泡图层（从编辑器） */}
+{bubbleLayers.map((layer, idx) => {
+  const anchor = layer.anchor || 'top-left';
+  let positionStyle = {};
+  
+  switch (anchor) {
+    case 'top-left':
+      positionStyle = { top: `${layer.y}px`, left: `${layer.x}px` };
+      break;
+    case 'top-right':
+      positionStyle = { top: `${layer.y}px`, right: `${layer.x}px` };
+      break;
+    case 'bottom-left':
+      positionStyle = { bottom: `${layer.y}px`, left: `${layer.x}px` };
+      break;
+    case 'bottom-right':
+      positionStyle = { bottom: `${layer.y}px`, right: `${layer.x}px` };
+      break;
+    case 'center':
+      positionStyle = { 
+        top: '50%', 
+        left: '50%', 
+        transform: `translate(calc(-50% + ${layer.x}px), calc(-50% + ${layer.y}px)) rotate(${layer.rotation || 0}deg)` 
+      };
+      break;
+    default:
+      positionStyle = { top: `${layer.y}px`, left: `${layer.x}px` };
+  }
+  
+  return (
+    <div
+      key={layer.id || idx}
+      style={{
+        position: 'absolute',
+        ...positionStyle,
+        transform: anchor !== 'center' ? `rotate(${layer.rotation || 0}deg)` : positionStyle.transform,
+        width: `${layer.width}px`,
+        height: `${layer.height}px`,
+        opacity: (layer.opacity || 100) / 100,
+        zIndex: layer.zIndex || idx,
+        pointerEvents: 'none'
+      }}
+    >
+      <img src={layer.url} alt="" className="w-full h-full object-contain" draggable={false} />
+    </div>
+  );
+})}
+      
+      {/* 文字内容 */}
+      <p 
+        className="relative px-3 py-2 whitespace-pre-wrap break-words leading-relaxed" 
+        style={{ ...textStyle, zIndex: 5 }}
+      >
+        {content}
+      </p>
+    </div>
+  );
+};
 
         return (
           <React.Fragment key={msg.id}>
@@ -5529,7 +6215,7 @@ if (msg.type === 'shared_post' && msg.sharedPost) {
                   'bg-gradient-to-br from-blue-400 to-cyan-400'
                 )}
                 
-                <div className="max-w-[70%] flex flex-col items-end">
+                <div className="max-w-[85%] flex flex-col items-end">
                   {renderBubble(msg.content, userPersona, true)}
                   {msg.editedAt && <span className="text-xs text-gray-400 mt-1">已编辑</span>}
                 </div>
@@ -5629,8 +6315,8 @@ if (msg.type === 'shared_post' && msg.sharedPost) {
     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-400 to-gray-500 flex items-center justify-center flex-shrink-0">
       <span className="text-white font-bold text-sm">{msg.npcName?.[0] || '?'}</span>
     </div>
-    <div className="max-w-[70%]">
-      <p className="text-xs text-gray-500 mb-1 ml-1">{msg.npcName || 'NPC'}</p>
+    <div className="max-w-[85%]">
+  <p className="text-xs text-gray-500 mb-1 ml-1">{msg.npcName || 'NPC'}</p>
       <div className="chat-bubble-ai">
         <p className="px-3 py-2 whitespace-pre-wrap break-words leading-relaxed text-sm">
           {msg.content}
@@ -5647,7 +6333,7 @@ if (msg.type === 'shared_post' && msg.sharedPost) {
       char?.name?.[0],
       'bg-gradient-to-br from-purple-400 to-pink-400'
     )}
-    <div className="max-w-[70%] flex flex-col items-start">
+    <div className="max-w-[85%] flex flex-col items-start">
       {chat.type === 'group' && <p className="text-xs text-gray-500 mb-1 ml-1">{char?.name}</p>}
       {renderBubble(msg.content, char, false)}
       {msg.editedAt && <span className="text-xs text-gray-400 mt-1">已编辑</span>}
