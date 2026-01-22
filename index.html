@@ -443,22 +443,38 @@
       const setState = (newState) => {
         state = typeof newState === 'function' ? newState(state) : { ...state, ...newState };
         listeners.forEach(listener => listener(state));
-        // 保存到 localStorage（不保存临时状态）
-        try {
-          const stateToSave = {
-            ...state,
-            pendingReplies: {},  // 不保存进行中的回复
-            notifications: [],   // 不保存通知
-            appState: {
-              ...state.appState,
-              currentScreen: 'lock',  // 重新打开时从锁屏开始
-              currentChatId: null,
+        
+        // 延迟保存，避免高频操作导致卡顿
+        clearTimeout(window.saveTimer);
+        window.saveTimer = setTimeout(() => {
+          try {
+            const stateToSave = {
+              ...state,
+              pendingReplies: {}, 
+              notifications: [],
+              appState: {
+                ...state.appState,
+                currentScreen: state.appState.currentScreen === 'lock' ? 'lock' : 'home',
+                currentChatId: null,
+              }
+            };
+            
+            const stringifiedData = JSON.stringify(stateToSave);
+            
+            // 检查大小 (约等于字符长度 * 2 字节)
+            const sizeInMB = (stringifiedData.length * 2) / 1024 / 1024;
+            if (sizeInMB > 4.5) {
+              console.warn(`⚠️ 存储空间即将耗尽: ${sizeInMB.toFixed(2)}MB / 5MB`);
             }
-          };
-          localStorage.setItem('fake-phone-storage', JSON.stringify(stateToSave));
-        } catch (e) {
-          console.error('Save failed:', e);
-        }
+            
+            localStorage.setItem('fake-phone-storage', stringifiedData);
+          } catch (e) {
+            console.error('💾 保存失败:', e);
+            if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+              alert('⚠️ 存储空间已满！\n原因：你上传的图片（背景、气泡或头像）体积太大。\n建议：请更换较小的图片，或在“设置”中导出备份。');
+            }
+          }
+        }, 500); // 500ms 抖动缓冲
       };
       
       const subscribe = (listener) => {
