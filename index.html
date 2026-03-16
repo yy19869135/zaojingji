@@ -2517,6 +2517,7 @@ const SecuritySettings = ({ onBack }) => {
 const Settings = () => {
   const state = useStore();
   const [localSettings, setLocalSettings] = useState(state.apiSettings);
+
   const [saveMessage, setSaveMessage] = useState('');
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelList, setModelList] = useState(state.apiSettings.availableModels || []);
@@ -2537,8 +2538,9 @@ const Settings = () => {
   }
 
   // --- 内部函数定义 ---
-  const handleSave = () => {
+    const handleSave = () => {
     actions.updateApiSettings({ ...localSettings, availableModels: modelList });
+
     setSaveMessage('✅ 已保存');
     setTimeout(() => setSaveMessage(''), 2000);
   };
@@ -2757,7 +2759,36 @@ const Settings = () => {
               </div>
             )}
             
+                                    <button onClick={async () => {
+              setSaveMessage('🔄 测试连接中...');
+              try {
+                const response = await fetch(`${localSettings.baseUrl}/chat/completions`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localSettings.apiKey}`,
+                  },
+                  body: JSON.stringify({
+                    model: localSettings.modelName,
+                    messages: [{ role: 'user', content: 'hi' }],
+                  }),
+                });
+                const text = await response.text();
+                if (response.ok) {
+                  const data = JSON.parse(text);
+                  const reply = data.choices?.[0]?.message?.content || '无内容';
+                  setSaveMessage('✅ 连接成功！回复: ' + reply.slice(0, 40));
+                } else {
+                  setSaveMessage('❌ 错误' + response.status + ': ' + text.slice(0, 200));
+                }
+              } catch (e) {
+                setSaveMessage('❌ 网络错误: ' + e.message);
+              }
+              setTimeout(() => setSaveMessage(''), 15000);
+            }} className="w-full p-4 bg-green-500 text-white rounded-xl font-medium mb-2">测试连接</button>
+
             <button onClick={handleSave} className="w-full p-4 bg-blue-500 text-white rounded-xl font-medium">保存</button>
+
         </div>
         {saveMessage && <div className="fixed bottom-20 left-4 right-4 z-50"><div className="bg-black/80 text-white text-center py-3 px-4 rounded-xl text-sm">{saveMessage}</div></div>}
       </div>
