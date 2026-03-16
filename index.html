@@ -2520,7 +2520,10 @@ const Settings = () => {
   const [saveMessage, setSaveMessage] = useState('');
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelList, setModelList] = useState(state.apiSettings.availableModels || []);
-  const [currentPage, setCurrentPage] = useState('main'); // main, ai, prompts, security
+    const [currentPage, setCurrentPage] = useState('main'); // main, ai, prompts, security, ailock
+  const API_LOCK_PASSWORD = '9736'; // ← 改成你想要的密码
+  const [apiLockInput, setApiLockInput] = useState('');
+  const [apiLockError, setApiLockError] = useState(false);
   const importInputRef = useRef(null);
 
   useEffect(() => {
@@ -2602,6 +2605,65 @@ const Settings = () => {
       </div>
     </button>
   );
+
+  // API密码锁页面
+  if (currentPage === 'ailock') {
+    return (
+      <div className="w-full h-full bg-gray-100 flex flex-col">
+        <div className="bg-gray-100 pt-10 pb-2 px-4 border-b border-gray-200 flex items-center justify-between">
+          <button onClick={() => { setCurrentPage('main'); setApiLockInput(''); setApiLockError(false); }} className="text-blue-500 flex items-center gap-1">
+            <Icon name="ChevronLeft" size={20} /> 返回
+          </button>
+          <h1 className="text-lg font-semibold">验证密码</h1>
+          <div className="w-16"></div>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center p-8">
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-6">
+            <Icon name="Lock" size={36} className="text-white" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">AI 设置已锁定</h2>
+          <p className="text-gray-500 text-sm text-center mb-8">请输入密码以访问 AI 服务设置</p>
+          <div className="flex gap-4 mb-8">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${apiLockInput.length > i ? (apiLockError ? 'bg-red-500 border-red-500' : 'bg-blue-500 border-blue-500') : (apiLockError ? 'border-red-400' : 'border-gray-300')} ${apiLockError ? 'animate-shake' : ''}`} />
+            ))}
+          </div>
+          {apiLockError && <p className="text-red-500 text-sm mb-4">密码错误，请重试</p>}
+          <div className="grid grid-cols-3 gap-x-8 gap-y-4 w-full max-w-[260px]">
+            {[1,2,3,4,5,6,7,8,9].map(num => (
+              <button key={num} onClick={() => {
+                if (apiLockInput.length >= 4) return;
+                const newPass = apiLockInput + num;
+                setApiLockInput(newPass);
+                setApiLockError(false);
+                if (newPass.length === 4) {
+                  if (newPass === API_LOCK_PASSWORD) {
+                    setTimeout(() => { setCurrentPage('ai'); setApiLockInput(''); }, 200);
+                  } else {
+                    setTimeout(() => { setApiLockError(true); setTimeout(() => { setApiLockInput(''); setApiLockError(false); }, 600); }, 200);
+                  }
+                }
+              }} className="w-16 h-16 rounded-full bg-white shadow-sm active:bg-gray-100 flex items-center justify-center text-gray-800 text-2xl font-light active:scale-95">{num}</button>
+            ))}
+            <div></div>
+            <button onClick={() => {
+              const newPass = apiLockInput + '0';
+              setApiLockInput(newPass);
+              setApiLockError(false);
+              if (newPass.length === 4) {
+                if (newPass === API_LOCK_PASSWORD) {
+                  setTimeout(() => { setCurrentPage('ai'); setApiLockInput(''); }, 200);
+                } else {
+                  setTimeout(() => { setApiLockError(true); setTimeout(() => { setApiLockInput(''); setApiLockError(false); }, 600); }, 200);
+                }
+              }
+            }} className="w-16 h-16 rounded-full bg-white shadow-sm active:bg-gray-100 flex items-center justify-center text-gray-800 text-2xl font-light active:scale-95">0</button>
+            <button onClick={() => { setApiLockInput(apiLockInput.slice(0,-1)); setApiLockError(false); }} className="w-16 h-16 flex items-center justify-center text-gray-400"><Icon name="Delete" size={24} /></button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // AI服务设置页面
   if (currentPage === 'ai') {
@@ -2735,7 +2797,7 @@ const Settings = () => {
       <div className="flex-1 overflow-y-auto">
         <div className="mt-6 mx-4">
           <div className="bg-white rounded-xl overflow-hidden divide-y divide-gray-100">
-            <SettingRow icon="🤖" label="AI 服务" value={localSettings.provider} onClick={() => setCurrentPage('ai')} />
+            <SettingRow icon="🤖" label="AI 服务" value={localSettings.provider + ' 🔒'} onClick={() => setCurrentPage('ailock')} />
             <SettingRow icon="📝" label="提示词" onClick={() => setCurrentPage('prompts')} />
             <SettingRow icon="🔒" label="锁屏与安全" onClick={() => setCurrentPage('security')} />
           </div>
